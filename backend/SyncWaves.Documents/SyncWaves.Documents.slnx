@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="SyncWaves.Documents.Api/SyncWaves.Documents.Api.csproj" />
+  <Project Path="SyncWaves.Documents.Application/SyncWaves.Documents.Application.csproj" />
+  <Project Path="SyncWaves.Documents.Domain/SyncWaves.Documents.Domain.csproj" />
+  <Project Path="SyncWaves.Documents.Infrastructure/SyncWaves.Documents.Infrastructure.csproj" />
+  <Project Path="SyncWaves.Documents.IntegrationTests/SyncWaves.Documents.IntegrationTests.csproj" Id="930de4be-5eb8-4527-8728-f3968e2eed6e" />
+  <Project Path="SyncWaves.Documents.Tests/SyncWaves.Documents.UnitTests.csproj" Id="a18f6b47-ab81-43f9-baf0-d679922b0a19" />
+</Solution>

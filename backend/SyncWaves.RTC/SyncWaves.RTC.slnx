@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SyncWaves.RTC.Api/SyncWaves.RTC.Api.csproj" />
+  <Project Path="SyncWaves.RTC.IntegrationTests/SyncWaves.RTC.IntegrationTests.csproj" Id="917cc162-4fac-405f-80e1-3055b02b4c23" />
+  <Project Path="SyncWaves.RTC.UnitTests/SyncWaves.RTC.UnitTests.csproj" Id="39e2f7f4-770c-44de-b44a-57b08dfe4117" />
+</Solution>

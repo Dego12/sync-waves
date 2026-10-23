@@ -1,0 +1,6 @@
+@SyncWaves.Auth.Api_HostAddress = http://localhost:5060
+
+GET {{SyncWaves.Auth.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

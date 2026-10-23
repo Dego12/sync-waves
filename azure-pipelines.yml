@@ -1,0 +1,590 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  dockerRegistryServiceConnection: 'WIF-sync-waves-ADR'
+  documentsImageRepository: 'documents-api'
+  authImageRepository: 'auth-api'
+  rtcImageRepository: 'rtc-api'
+  frontendImageRepository: 'frontend'
+  imageTag: '$(Build.BuildId)'
+  minLineCoverage: '50'
+
+  acrLoginServer: 'syncwavesregistry-h6bhgfa5a9fjg5f7.azurecr.io' 
+  azureSubscription: 'WIF-sync-waves-ARM' 
+  resourceGroup: 'accesa-sync-waves'
+  containerAppsEnvironment: 'syncwaves-env'
+  documentsAppName: 'syncwaves-documents'
+  authAppName: 'syncwaves-auth'
+  rtcAppName: 'syncwaves-rtc'
+  frontendAppName: 'syncwaves-frontend'
+
+  REACT_APP_AUTH_URL: 'https://syncwaves-auth.agreeablemeadow-13a9183b.westeurope.azurecontainerapps.io'
+  REACT_APP_DOC_URL:  'https://syncwaves-documents.agreeablemeadow-13a9183b.westeurope.azurecontainerapps.io'
+  REACT_APP_RTC_URL:  'https://syncwaves-rtc.agreeablemeadow-13a9183b.westeurope.azurecontainerapps.io'
+  REACT_APP_MS_CLIENT_ID: '8cd3d216-019f-43cb-8a08-d86a960a8277'
+  REACT_APP_MS_TENANT_ID: '1de42545-e85f-4f77-9056-f5cc7c81ea5b'
+  REACT_APP_MS_REDIRECT_URI: 'https://syncwaves-frontend.agreeablemeadow-13a9183b.westeurope.azurecontainerapps.io'
+
+
+
+jobs:
+  - job: RestoreAndBuild
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET 10 SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '10.0.x'
+        includePreviewVersions: true
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore Documents service'
+      inputs:
+        command: 'restore'
+        projects: |
+          backend/SyncWaves.Documents/SyncWaves.Documents.slnx
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build Documents service'
+      inputs:
+        command: 'build'
+        projects: |
+          backend/SyncWaves.Documents/SyncWaves.Documents.slnx
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore Auth service'
+      inputs:
+        command: 'restore'
+        projects: |
+          backend/SyncWaves.Auth/SyncWaves.Auth.slnx
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build Auth service'
+      inputs:
+        command: 'build'
+        projects: |
+          backend/SyncWaves.Auth/SyncWaves.Auth.slnx
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore RTC service'
+      inputs:
+        command: 'restore'
+        projects: |
+          backend/SyncWaves.RTC/SyncWaves.RTC.slnx
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build RTC service'
+      inputs:
+        command: 'build'
+        projects: |
+          backend/SyncWaves.RTC/SyncWaves.RTC.slnx
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+  
+  - job: RunTests
+    dependsOn: RestoreAndBuild
+    pool: { vmImage: 'windows-latest' }
+    steps:
+      - task: UseDotNet@2
+        displayName: 'Use .NET 10 SDK'
+        inputs:
+          packageType: 'sdk'
+          version: '10.0.x'
+          includePreviewVersions: true
+
+      - task: DotNetCoreCLI@2
+        displayName: 'Run unit tests (with coverage)'
+        inputs:
+          command: 'test'
+          projects: |
+            backend/SyncWaves.Auth/SyncWaves.Auth.Tests/SyncWaves.Auth.UnitTests.csproj
+            backend/SyncWaves.Documents/SyncWaves.Documents.Tests/SyncWaves.Documents.UnitTests.csproj
+            backend/SyncWaves.RTC/SyncWaves.RTC.UnitTests/SyncWaves.RTC.UnitTests.csproj
+          arguments: >
+            --configuration $(buildConfiguration)
+            --collect:"XPlat Code Coverage"
+            --settings $(Build.SourcesDirectory)/coverlet.runsettings
+          publishTestResults: true
+          testRunTitle: 'Unit tests'
+
+      - task: DotNetCoreCLI@2
+        displayName: 'Run integration tests (with coverage)'
+        inputs:
+          command: 'test'
+          projects: |
+            backend/SyncWaves.Auth/SyncWaves.Auth.IntegrationTests/SyncWaves.Auth.IntegrationTests.csproj
+            backend/SyncWaves.Documents/SyncWaves.Documents.IntegrationTests/SyncWaves.Documents.IntegrationTests.csproj
+            backend/SyncWaves.RTC/SyncWaves.RTC.IntegrationTests/SyncWaves.RTC.IntegrationTests.csproj
+          arguments: >
+            --configuration $(buildConfiguration)
+            --collect:"XPlat Code Coverage"
+            --settings $(Build.SourcesDirectory)/coverlet.runsettings
+          publishTestResults: true
+          testRunTitle: 'Integration tests'
+
+      - task: PowerShell@2
+        displayName: 'Install ReportGenerator'
+        condition: succeededOrFailed()
+        inputs:
+          targetType: 'inline'
+          script: |
+            $toolPath = "$(Agent.TempDirectory)\tools"
+            New-Item -ItemType Directory -Force -Path $toolPath | Out-Null
+            dotnet tool install dotnet-reportgenerator-globaltool --tool-path $toolPath
+            Write-Host "##vso[task.prependpath]$toolPath"
+
+      - task: PowerShell@2
+        displayName: 'Merge coverage reports'
+        condition: succeededOrFailed()
+        inputs:
+          targetType: 'inline'
+          script: |
+            $root = "$(Agent.TempDirectory)"
+            $targetDir = "$(Build.SourcesDirectory)\CoverageReport"
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+
+            $coverageFiles = Get-ChildItem -Path $root -Recurse -Filter "coverage.cobertura.xml" -ErrorAction SilentlyContinue
+
+            if (-not $coverageFiles -or $coverageFiles.Count -eq 0) {
+              Write-Host "No coverage files found under: $root"
+              Write-Host "Tip: ensure tests ran with --collect:`"XPlat Code Coverage`" and the test projects are compatible."
+              throw "No coverage.cobertura.xml files found."
+            }
+
+            $reports = ($coverageFiles | ForEach-Object { $_.FullName }) -join ';'
+            Write-Host "Found $($coverageFiles.Count) coverage files."
+
+            reportgenerator `
+              "-reports:$reports" `
+              "-targetdir:$targetDir" `
+              "-reporttypes:Cobertura;HtmlInline_AzurePipelines;TextSummary"
+
+            if (!(Test-Path "$targetDir\Cobertura.xml")) {
+              throw "Merged Cobertura.xml not generated at $targetDir\Cobertura.xml"
+            }
+
+      - task: PublishCodeCoverageResults@2
+        displayName: 'Publish code coverage'
+        condition: succeededOrFailed()
+        inputs:
+          summaryFileLocation: '$(Build.SourcesDirectory)/CoverageReport/Cobertura.xml'
+          pathToSources: '$(Build.SourcesDirectory)'
+          failIfCoverageEmpty: true
+
+      - task: PowerShell@2
+        displayName: 'Enforce code coverage threshold'
+        condition: succeededOrFailed()
+        inputs:
+          targetType: 'inline'
+          script: |
+            $min = [double]"$(minLineCoverage)"
+            $file = "$(Build.SourcesDirectory)\CoverageReport\Cobertura.xml"
+
+            if (!(Test-Path $file)) {
+              throw "Coverage file not found: $file"
+            }
+
+            [xml]$xml = Get-Content $file
+            $lineRate = [double]$xml.coverage.'line-rate'
+            $pct = [math]::Round($lineRate * 100, 2)
+
+            Write-Host "Total line coverage: $pct% (threshold: $min%)"
+
+            if ($pct -lt $min) {
+              throw "Code coverage check failed: $pct% < $min%"
+            }
+
+  - job: BuildAndPushDockerImages
+    dependsOn: RunTests
+    steps: 
+    - task: Docker@2
+      displayName: 'Build and push Documents image'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(documentsImageRepository)'
+        command: 'buildAndPush'
+        Dockerfile: 'backend/SyncWaves.Documents/SyncWaves.Documents.Api/Dockerfile'
+        buildContext: '.'
+        tags: |
+          $(imageTag)
+          latest
+
+    - task: Docker@2
+      displayName: 'Build and push Auth image'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(authImageRepository)'
+        command: 'buildAndPush'
+        Dockerfile: 'backend/SyncWaves.Auth/SyncWaves.Auth.Api/Dockerfile'
+        buildContext: '.'
+        tags: |
+          $(imageTag)
+          latest
+
+    - task: Docker@2
+      displayName: 'Build and push RTC image'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(rtcImageRepository)'
+        command: 'buildAndPush'
+        Dockerfile: 'backend/SyncWaves.RTC/SyncWaves.RTC.Api/Dockerfile'
+        buildContext: '.'
+        tags: |
+          $(imageTag)
+          latest
+
+    - task: Docker@2
+      displayName: 'Build Frontend image'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(frontendImageRepository)'
+        command: 'build'
+        Dockerfile: 'frontend/syncwaves.frontend/Dockerfile'
+        buildContext: 'frontend/syncwaves.frontend'
+        tags: |
+          $(imageTag)
+          latest
+        arguments: >
+          --build-arg REACT_APP_AUTH_URL=$(REACT_APP_AUTH_URL)
+          --build-arg REACT_APP_DOC_URL=$(REACT_APP_DOC_URL)
+          --build-arg REACT_APP_RTC_URL=$(REACT_APP_RTC_URL)
+          --build-arg REACT_APP_MS_CLIENT_ID=$(REACT_APP_MS_CLIENT_ID)
+          --build-arg REACT_APP_MS_TENANT_ID=$(REACT_APP_MS_TENANT_ID)
+          --build-arg REACT_APP_MS_REDIRECT_URI=$(REACT_APP_MS_REDIRECT_URI)
+
+    - task: Docker@2
+      displayName: 'Push Frontend image'
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(frontendImageRepository)'
+        command: 'push'
+        tags: |
+          $(imageTag)
+          latest   
+
+  - job: CreateOrUpdateAzureContainerApps
+    dependsOn: BuildAndPushDockerImages
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Create/Update Postgres container app'
+      env:
+          POSTGRES_DB: $(POSTGRES_DB)
+          POSTGRES_USER: $(POSTGRES_USER)
+          POSTGRES_PASSWORD: $(POSTGRES_PASSWORD)
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          set -e
+
+          RG=$(resourceGroup)
+          ENV_NAME=$(containerAppsEnvironment)
+          PG_APP_NAME=syncwaves-postgres
+
+          if az containerapp show -g $RG -n $PG_APP_NAME >/dev/null 2>&1; then
+            echo "Updating Postgres Container App..."
+            az containerapp update \
+              -g $RG \
+              -n $PG_APP_NAME \
+              --image postgres:16-alpine \
+              --set-env-vars \
+                POSTGRES_DB="$POSTGRES_DB" \
+                POSTGRES_USER="$POSTGRES_USER" \
+                POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
+          else
+            echo "Creating Postgres Container App..."
+            az containerapp create \
+              -g $RG \
+              -n $PG_APP_NAME \
+              --environment $ENV_NAME \
+              --image postgres:16-alpine \
+              --transport tcp \
+              --target-port 5432 \
+              --ingress internal \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --env-vars \
+                POSTGRES_DB="$POSTGRES_DB" \
+                POSTGRES_USER="$POSTGRES_USER" \
+                POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
+          fi
+
+
+    - task: AzureCLI@2
+      displayName: 'Create/Update pgAdmin container app'
+      env:
+        PGADMIN_DEFAULT_EMAIL: $(PGADMIN_DEFAULT_EMAIL)         
+        PGADMIN_DEFAULT_PASSWORD: $(PGADMIN_DEFAULT_PASSWORD)
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          set -e
+
+          RG=$(resourceGroup)
+          ENV_NAME=$(containerAppsEnvironment)
+          PGADMIN_APP_NAME=syncwaves-pgadmin
+
+          if az containerapp show -g $RG -n $PGADMIN_APP_NAME >/dev/null 2>&1; then
+            echo "Updating pgAdmin Container App..."
+            az containerapp update \
+              -g $RG \
+              -n $PGADMIN_APP_NAME \
+              --image dpage/pgadmin4:8.13 \
+              --set-env-vars \
+                PGADMIN_DEFAULT_EMAIL="$PGADMIN_DEFAULT_EMAIL" \
+                PGADMIN_DEFAULT_PASSWORD="$PGADMIN_DEFAULT_PASSWORD" \
+                PGADMIN_LISTEN_PORT="8080"
+          else
+            echo "Creating pgAdmin Container App..."
+            az containerapp create \
+              -g $RG \
+              -n $PGADMIN_APP_NAME \
+              --environment $ENV_NAME \
+              --image dpage/pgadmin4:8.13 \
+              --ingress external \
+              --transport http \
+              --target-port 8080 \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --env-vars \
+                PGADMIN_DEFAULT_EMAIL="$PGADMIN_DEFAULT_EMAIL" \
+                PGADMIN_DEFAULT_PASSWORD="$PGADMIN_DEFAULT_PASSWORD" \
+                PGADMIN_LISTEN_PORT="8080"
+          fi
+
+    - task: AzureCLI@2
+      displayName: 'Create/Update documents container app'
+      env:
+          DB_CONNECTION: $(DB_CONNECTION)
+          JWT_KEY: $(JWT_KEY)
+          JWT_ISSUER: $(JWT_ISSUER)
+          JWT_AUDIENCE: $(JWT_AUDIENCE)
+          MEDIATR_LICENSE: $(MEDIATR_LICENSE)
+          FRONTEND_URL: $(FRONTEND_URL)
+          RTC_URL: $(RTC_URL)
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          if ! az containerapp env show -g $(resourceGroup) -n $(containerAppsEnvironment) >/dev/null 2>&1; then
+          echo "Creating Container Apps environment $(containerAppsEnvironment)"
+          az containerapp env create \
+              -g $(resourceGroup) \
+              -n $(containerAppsEnvironment) \
+              --location westeurope
+          fi
+
+          APP_NAME=$(documentsAppName)
+          
+          if az containerapp show -g $(resourceGroup) -n $APP_NAME >/dev/null 2>&1; then
+          echo "Updating Container App $APP_NAME"
+          az containerapp update \
+            -g $(resourceGroup) \
+            -n $APP_NAME \
+            --image $(acrLoginServer)/$(documentsImageRepository):$(imageTag) \
+            --set-env-vars \
+              ConnectionStrings__DefaultConnection="$DB_CONNECTION" \
+              Jwt__Key="$JWT_KEY" \
+              Jwt__Issuer="$JWT_ISSUER" \
+              Jwt__Audience="$JWT_AUDIENCE" \
+              App__FrontendBaseUrl="$FRONTEND_URL" \
+              App__RtcBaseUrl="$RTC_URL"
+          else
+          echo "Creating Container App $APP_NAME"
+          az containerapp create \
+            -g $(resourceGroup) \
+            -n $APP_NAME \
+            --environment $(containerAppsEnvironment) \
+            --image $(acrLoginServer)/$(documentsImageRepository):$(imageTag) \
+            --target-port 8080 \
+            --ingress external \
+            --registry-server $(acrLoginServer) \
+            --registry-username $(ACR_USERNAME) \
+            --registry-password $(ACR_PASSWORD) \
+            --env-vars \
+              ConnectionStrings__DefaultConnection="$DB_CONNECTION" \
+              Jwt__Key="$JWT_KEY" \
+              Jwt__Issuer="$JWT_ISSUER" \
+              Jwt__Audience="$JWT_AUDIENCE" \
+              App__FrontendBaseUrl="$FRONTEND_URL" \
+              App__RtcBaseUrl="$RTC_URL"
+          fi
+
+    - task: AzureCLI@2
+      displayName: 'Create/Update auth container app'
+      env:
+          DB_CONNECTION: $(DB_CONNECTION)
+          JWT_KEY: $(JWT_KEY)
+          JWT_ISSUER: $(JWT_ISSUER)
+          JWT_AUDIENCE: $(JWT_AUDIENCE)
+          SENDGRID_API_KEY: $(SENDGRID_API_KEY)
+          SENDGRID_FROM_EMAIL: $(SENDGRID_FROM_EMAIL)
+          SENDGRID_FROM_NAME: $(SENDGRID_FROM_NAME)
+          MEDIATR_LICENSE: $(MEDIATR_LICENSE)
+          BLOB_STORAGE_CONNECTION: $(BLOB_STORAGE_CONNECTION)
+          BLOB_STORAGE_CONTAINER: $(BLOB_STORAGE_CONTAINER)
+          MS_CLIENTID: $(MS_CLIENTID)
+          MS_TENANTID: $(MS_TENANTID)
+          MS_INSTANCE: $(MS_INSTANCE)
+          MS_AUTHORITY: $(MS_AUTHORITY)
+          FRONTEND_URL: $(FRONTEND_URL)
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          APP_NAME=$(authAppName)
+          
+          if az containerapp show -g $(resourceGroup) -n $APP_NAME >/dev/null 2>&1; then
+          echo "Updating Container App $APP_NAME"
+          az containerapp update \
+            -g $(resourceGroup) \
+            -n $APP_NAME \
+            --image $(acrLoginServer)/$(authImageRepository):$(imageTag) \
+            --set-env-vars \
+              ConnectionStrings__DefaultConnection="$DB_CONNECTION" \
+              Jwt__Key="$JWT_KEY" \
+              Jwt__Issuer="$JWT_ISSUER" \
+              Jwt__Audience="$JWT_AUDIENCE" \
+              SendGrid__ApiKey="$SENDGRID_API_KEY" \
+              SendGrid__FromEmail="$SENDGRID_FROM_EMAIL" \
+              SendGrid__FromName="$SENDGRID_FROM_NAME" \
+              App__FrontendBaseUrl="$FRONTEND_URL" \
+              AzureStorage__ConnectionString="$BLOB_STORAGE_CONNECTION" \
+              AzureStorage__ProfileImagesContainer="$BLOB_STORAGE_CONTAINER" \
+              MicrosoftIdentity__ClientId="$MS_CLIENTID" \
+              MicrosoftIdentity__TenantId="$MS_TENANTID" \
+              MicrosoftIdentity__Instance="$MS_INSTANCE" \
+              MicrosoftIdentity__Authority="$MS_AUTHORITY"
+          else
+          echo "Creating Container App $APP_NAME"
+          az containerapp create \
+            -g $(resourceGroup) \
+            -n $APP_NAME \
+            --environment $(containerAppsEnvironment) \
+            --image $(acrLoginServer)/$(authImageRepository):$(imageTag) \
+            --target-port 8080 \
+            --ingress external \
+            --registry-server $(acrLoginServer) \
+            --registry-username $(ACR_USERNAME) \
+            --registry-password $(ACR_PASSWORD) \
+            --env-vars \
+              ConnectionStrings__DefaultConnection="$DB_CONNECTION" \
+              Jwt__Key="$JWT_KEY" \
+              Jwt__Issuer="$JWT_ISSUER" \ 
+              Jwt__Audience="$JWT_AUDIENCE" \
+              SendGrid__ApiKey="$SENDGRID_API_KEY" \
+              SendGrid__FromEmail="$SENDGRID_FROM_EMAIL" \
+              SendGrid__FromName="$SENDGRID_FROM_NAME" \
+              App__FrontendBaseUrl="$FRONTEND_URL" \
+              AzureStorage__ConnectionString="$BLOB_STORAGE_CONNECTION" \
+              AzureStorage__ProfileImagesContainer="$BLOB_STORAGE_CONTAINER" \
+              MicrosoftIdentity__ClientId="$MS_CLIENTID" \
+              MicrosoftIdentity__TenantId="$MS_TENANTID" \
+              MicrosoftIdentity__Instance="$MS_INSTANCE" \
+              MicrosoftIdentity__Authority="$MS_AUTHORITY"
+          fi
+
+    - task: AzureCLI@2
+      displayName: 'Create/Update rtc container app'
+      env:
+          DB_CONNECTION: $(DB_CONNECTION)
+          JWT_KEY: $(JWT_KEY)
+          JWT_ISSUER: $(JWT_ISSUER)
+          JWT_AUDIENCE: $(JWT_AUDIENCE)
+          DOC_URL: $(DOC_URL)
+          FRONTEND_URL: $(FRONTEND_URL)
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          APP_NAME=$(rtcAppName)
+          
+          if az containerapp show -g $(resourceGroup) -n $APP_NAME >/dev/null 2>&1; then
+          echo "Updating Container App $APP_NAME"
+          az containerapp update \
+            -g $(resourceGroup) \
+            -n $APP_NAME \
+            --image $(acrLoginServer)/$(rtcImageRepository):$(imageTag) \
+            --set-env-vars \
+              ConnectionStrings__DefaultConnection="$DB_CONNECTION" \
+              Jwt__Key="$JWT_KEY" \
+              Jwt__Issuer="$JWT_ISSUER" \
+              Jwt__Audience="$JWT_AUDIENCE" \
+              App__DocumentsBaseUrl="$DOC_URL" \
+              App__FrontendBaseUrl="$FRONTEND_URL"
+          else
+          echo "Creating Container App $APP_NAME"
+          az containerapp create \
+            -g $(resourceGroup) \
+            -n $APP_NAME \
+            --environment $(containerAppsEnvironment) \
+            --image $(acrLoginServer)/$(rtcImageRepository):$(imageTag) \
+            --target-port 8080 \
+            --ingress external \
+            --registry-server $(acrLoginServer) \
+            --registry-username $(ACR_USERNAME) \
+            --registry-password $(ACR_PASSWORD) \
+            --env-vars \
+              ConnectionStrings__DefaultConnection="$DB_CONNECTION" \
+              Jwt__Key="$JWT_KEY" \
+              Jwt__Issuer="$JWT_ISSUER" \
+              Jwt__Audience="$JWT_AUDIENCE" \
+              App__DocumentsBaseUrl="$DOC_URL" \
+              App__FrontendBaseUrl="$FRONTEND_URL"
+          fi
+
+    - task: AzureCLI@2
+      displayName: 'Create/Update frontend container app'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        tags: |
+          $(imageTag)
+          latest
+        inlineScript: |
+          APP_NAME=$(frontendAppName)
+          
+          if az containerapp show -g $(resourceGroup) -n $APP_NAME >/dev/null 2>&1; then
+          echo "Updating Container App $APP_NAME"
+          az containerapp update \
+            -g $(resourceGroup) \
+            -n $APP_NAME \
+            --image $(acrLoginServer)/$(frontendImageRepository):$(imageTag)
+          else
+          echo "Creating Container App $APP_NAME"
+          az containerapp create \
+            -g $(resourceGroup) \
+            -n $APP_NAME \
+            --environment $(containerAppsEnvironment) \
+            --image $(acrLoginServer)/$(frontendImageRepository):$(imageTag) \
+            --target-port 80 \
+            --ingress external \
+            --registry-server $(acrLoginServer) \
+            --registry-username $(ACR_USERNAME) \
+            --registry-password $(ACR_PASSWORD)
+          fi
+
+  
+
+    
+

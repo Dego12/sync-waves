@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+
+          <Include>[SyncWaves.*]*</Include>
+
+          <Exclude>[*.UnitTests]*,[*.IntegrationTests]*,[*.Tests]*</Exclude>
+
+          <ExcludeByFile>
+            **/*Migrations/*.cs,
+            **/*.g.cs,
+            **/*Designer.cs,
+            **/*Repositories/*.cs,
+            **/*Extensions/*.cs,
+            **/*Resources/*.cs,
+            AuthDbContext.cs,
+            DocumentsDbContext.cs,
+            Program.cs,
+
+          </ExcludeByFile>
+
+          <ExcludeByAttribute>
+            Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute
+          </ExcludeByAttribute>
+
+          <SkipAutoProps>true</SkipAutoProps>
+
+          <ExcludeAssembliesWithoutSources>MissingAll</ExcludeAssembliesWithoutSources>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

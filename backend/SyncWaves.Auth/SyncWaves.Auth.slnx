@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="SyncWaves.Auth.Api/SyncWaves.Auth.Api.csproj" />
+  <Project Path="SyncWaves.Auth.Application/SyncWaves.Auth.Application.csproj" />
+  <Project Path="SyncWaves.Auth.Domain/SyncWaves.Auth.Domain.csproj" />
+  <Project Path="SyncWaves.Auth.Infrastructure/SyncWaves.Auth.Infrastructure.csproj" />
+  <Project Path="SyncWaves.Auth.IntegrationTests/SyncWaves.Auth.IntegrationTests.csproj" Id="e7ae3c90-ab23-48fe-a8ee-b7f0e08b6c35" />
+  <Project Path="SyncWaves.Auth.Tests/SyncWaves.Auth.UnitTests.csproj" Id="e1dc4941-6dc9-432b-9016-adf5d5286c48" />
+</Solution>

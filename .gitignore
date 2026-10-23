@@ -1,0 +1,114 @@
+﻿############################
+# .NET / ASP.NET Core
+############################
+
+# Build artifacts
+bin/
+obj/
+out/
+Debug/
+Release/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio files
+.vs/
+*.vcxproj.user
+*.cache/
+*.dbmdl
+*.jfm
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# Auto-generated files
+Generated/
+Generated Files/
+
+############################
+# Logs
+############################
+
+*.log
+logs/
+Log/
+
+############################
+# Entity Framework Core
+############################
+
+# EF Core creates snapshot files in Migrations
+# KEEP migrations folder EXCEPT these:
+*Migrations/*.Designer.cs
+*Migrations/*ModelSnapshot.cs
+
+# (Delete these two if you prefer to keep snapshots)
+# but usually they are ignored.
+
+############################
+# Configuration / Secrets
+############################
+
+# User secrets (should NOT be committed)
+appsettings.Development.json
+appsettings.Local.json
+appsettings.*.json
+
+# Private env files
+*.env
+.env.*
+
+############################
+# Node / React (frontend)
+############################
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Temp files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# React tooling
+.parcel-cache/
+.next/
+.npm/
+.pnp/
+.pnp.js
+
+############################
+# OS system files
+############################
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+############################
+# Docker
+############################
+
+# Local Docker build junk
+**/docker-compose.override.yml
+**/docker-compose*.local.yml
+
+#

@@ -1,0 +1,111 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: syncwaves-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4:8.4
+    container_name: syncwaves-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+
+  frontend:
+    build:
+      context: ./frontend/syncwaves.frontend
+      dockerfile: Dockerfile
+    container_name: syncwaves-frontend
+    restart: unless-stopped
+    ports:
+      - "3100:80"
+
+
+  auth:
+    build:
+      context: .
+      dockerfile: backend/SyncWaves.Auth/SyncWaves.Auth.Api/Dockerfile
+    container_name: syncwaves-auth
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      ConnectionStrings__DefaultConnection: ${DB_CONNECTION}
+      Jwt__Key: ${JWT_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      SendGrid__ApiKey: ${SENDGRID_API_KEY}
+      SendGrid__FromEmail: ${SENDGRID_FROM_EMAIL}
+      SendGrid__FromName: ${SENDGRID_FROM_NAME}
+      App__FrontendBaseUrl: ${FRONTEND_URL}
+      AzureStorage__ConnectionString: ${BLOB_STORAGE_CONNECTION}
+      AzureStorage__ProfileImagesContainer: ${BLOB_STORAGE_CONTAINER}
+      MicrosoftIdentity__ClientId: ${MS_CLIENTID}
+      MicrosoftIdentity__TenantId: ${MS_TENANTID}
+      MicrosoftIdentity__Instance: ${MS_INSTANCE}
+      MicrosoftIdentity__Authority: ${MS_AUTHORITY}
+    ports:
+      - "5065:8080"
+    depends_on:
+      - postgres
+
+  documents:
+    build:
+      context: .
+      dockerfile: backend/SyncWaves.Documents/SyncWaves.Documents.Api/Dockerfile
+    container_name: syncwaves-documents
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      App__FrontendBaseUrl: ${FRONTEND_URL}
+      App__RtcBaseUrl: ${RTC_URL}
+      ConnectionStrings__DefaultConnection: ${DB_CONNECTION}
+      Jwt__Key: ${JWT_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+    ports:
+      - "5075:8080"
+    depends_on:
+      - postgres
+      - auth
+
+  rtc:
+    build:
+      context: .
+      dockerfile: backend/SyncWaves.RTC/SyncWaves.RTC.Api/Dockerfile
+    container_name: syncwaves-rtc
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      ConnectionStrings__DefaultConnection: ${DB_CONNECTION}
+      Jwt__Key: ${JWT_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      App__DocumentsBaseUrl: ${DOC_URL}
+      App__FrontendBaseUrl: ${FRONTEND_URL}
+    ports:
+      - "5085:8080"
+    depends_on:
+      - postgres
+      - auth
+
+volumes:
+  postgres-data:
+  pgadmin-data:
